@@ -1,0 +1,110 @@
+# Description
+# ===========
+# This plabyook build a docker image, then push to azure container registry, 
+# then provision an azure container instance with that image.
+# 1. clone a sample helloworld app
+# 1. create azure container registery
+# 1. build docker image from helloworld app, and push image to azure container azure container registry
+# 1. create azure container instance with the image in azure container registry
+#
+# Prequisite
+# ===========
+# - git
+# - Docker
+- hosts: localhost
+  tasks:
+    - name: Prepare random postfix
+      set_fact:
+        rpfx: "{{ 1000 | random }}"
+      run_once: yes
+
+
+- name: demo
+  hosts: localhost
+# The modules of azure container registry and azure container instance are available since Ansible version 2.5.
+# But if you are using Ansible version 2.4, you need to have below 2 lines to get modules of azure container registry and azure container instance from the playbook role of azure_preview_modules.
+#  roles:
+#    - azure.azure_preview_modules
+  vars:
+    resource_group_name: gdmsansibledemo
+    resource_group: "{{ resource_group_name }}{{ rpfx }}"
+    location: eastus
+    registry_name: gdms_acr
+
+    frontend_repo_url: "https://github.com/cszukala/GDCapstone.git"
+    frontend_workspace: ~/src/frontend
+    frontend_image_name: gdfrontend
+    http_port: 3000
+
+    backend_repo_url: "https://github.com/dale-kim/gdbackend.git"
+    backend_workspace: ~/src/backend
+    backend_image_name: gdbackend
+    backend_port: 3000
+    email: matthew@thewongcode.net
+  tasks:
+    - name: git clone frontend
+      git:
+        repo: "{{ frontend_repo_url }}"
+        dest: "{{ frontend_workspace }}"
+    - name: git clone backend
+      git: 
+        repo: "{{ backend_repo_url }}"
+        dest: "{{ backend_workspace }}"
+    - name: Create a resource group
+      azure_rm_resourcegroup:
+        name: "{{ resource_group }}"
+        location: "{{ location }}"
+    - name: Create Azure Container Registry
+      azure_rm_containerregistry:
+        resource_group: "{{ resource_group }}"
+        name: "{{ registry_name }}"
+        admin_user_enabled: True
+        sku: Standard
+      register: acr_result
+    - name: Login docker registry
+      docker_login:
+        registry: "{{ registry_name }}.azurecr.io"
+        username: "{{ registry_name }}"
+        password: "{{ acr_result.credentials.password }}"
+        email: "{{ email }}"
+    - name: Docker Build Frontend and Push
+      docker_image:
+        path: "{{ frontend_workspace }}"
+        name: "{{ registry_name }}.azurecr.io/{{ frontend_image_name }}"
+        push: yes
+    - name: Docker Build Backend and Push
+      docker_image:
+        path: "{{ backend_workspace }}"
+        name: "{{ registry_name }}.azurecr.io/{{ backend_image_name }}"
+        push: yes
+    - name: Create Frontend Azure Container Instance
+      azure_rm_containerinstance:
+        resource_group: "{{ resource_group }}"
+        name: "{{ frontend_image_name }}"
+        ip_address: public
+        ports:
+          - "{{ http_port }}"
+        registry_login_server: "{{ registry_name }}.azurecr.io"
+        registry_username: "{{ registry_name }}"
+        registry_password: "{{ acr_result.credentials.password }}"
+        containers:
+          - name: "{{ frontend_image_name }}"
+            ports:
+              - "{{ http_port }}"
+            image: "{{ registry_name }}.azurecr.io/{{ frontend_image_name }}"
+
+    - name: Create Backend Azure Container Instance
+      azure_rm_containerinstance:
+        resource_group: "{{ resource_group }}"
+        name: "{{ backend_image_name }}"
+        ip_address: public
+        ports:
+          - "{{ http_port }}"
+        registry_login_server: "{{ registry_name }}.azurecr.io"
+        registry_username: "{{ registry_name }}"
+        registry_password: "{{ acr_result.credentials.password }}"
+        containers:
+          - name: "{{ backend_image_name }}"
+            ports:
+              - "{{ http_port }}"
+            image: "{{ registry_name }}.azurecr.io/{{ backend_image_name }}"
