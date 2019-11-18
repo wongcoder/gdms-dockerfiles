@@ -26,10 +26,10 @@
 #  roles:
 #    - azure.azure_preview_modules
   vars:
-    resource_group_name: gdmsansibledemo
+    resource_group_name: gdansible
     resource_group: "{{ resource_group_name }}{{ rpfx }}"
     location: eastus
-    registry_name: gdms_acr
+    registry_name: gdmsacr
 
     frontend_repo_url: "https://github.com/cszukala/GDCapstone.git"
     frontend_workspace: ~/src/frontend
